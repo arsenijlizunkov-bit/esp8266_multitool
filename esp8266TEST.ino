@@ -625,11 +625,17 @@ void showMenu() {
   
   // Индикатор прокрутки если есть пункты сверху/снизу
   if (menuTop > 0) {
-    display.fillTriangle(64, 62, 60, 64, 68, 64, SSD1306_WHITE);
+    display.fillTriangle(64, 55,// up
+                         61, 58,
+                         67, 58,
+                         SSD1306_WHITE);
 
   }
   if (menuTop + MENU_VISIBLE < MENU_ITEMS) {
-    display.fillTriangle(64, 58, 60, 56, 68, 56, SSD1306_WHITE);
+    display.fillTriangle(64, 63,// down
+                         61, 60,
+                         67, 60,
+                         SSD1306_WHITE);
   }
   
   display.display();
