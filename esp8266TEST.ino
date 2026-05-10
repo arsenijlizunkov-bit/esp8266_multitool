@@ -372,31 +372,58 @@ void showBrowser() {
   drawWifiIcon();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  
-  int charPerLine = 20;
-  int pos = 0;
-  int lineNum = 0;
-  int startLine = browserScroll;
-  
-  while (pos < browserResult.length() && lineNum < startLine + 8) {
-    String line = "";
-    int len = 0;
-    
-    while (pos < browserResult.length() && len < charPerLine) {
-      char c = browserResult[pos];
-      if (c == '\n') { pos++; break; }
-      line += c;
+
+  int maxLines = 8;    // строк на экране
+  int lineHeight = 8;   // высота строки в пикселях
+  int charsPerLine = 21; // примерная ширина для шрифта 1 (можно подогнать)
+
+  int currentLine = 0;  // абсолютный номер строки в тексте
+  int screenLine = 0;   // экранная строка
+  int pos = 0;          // позиция в browserResult
+
+  // Пропускаем строки до browserScroll
+  while (pos < browserResult.length() && currentLine < browserScroll) {
+    // Пропускаем до конца текущей логической строки или на 21 символ
+    int count = 0;
+    while (pos < browserResult.length() && browserResult[pos] != '\n' && count < charsPerLine) {
       pos++;
-      len++;
+      count++;
+    }
+    if (pos < browserResult.length() && browserResult[pos] == '\n') {
+      pos++; // пропускаем сам \n
+    }
+    currentLine++;
+  }
+
+  // Теперь рисуем видимые строки
+  while (screenLine < maxLines && pos < browserResult.length()) {
+    int y = screenLine * lineHeight;
+    
+    // Берём очередной кусок (до \n или до длины charsPerLine)
+    String line = "";
+    int count = 0;
+    // Пропускаем ведущие пробелы
+    while (pos < browserResult.length() && browserResult[pos] == ' ') pos++;
+    
+    while (pos < browserResult.length() && browserResult[pos] != '\n' && count < charsPerLine) {
+      line += browserResult[pos];
+      pos++;
+      count++;
     }
     
-    if (lineNum >= startLine) {
-      display.setCursor(0, (lineNum - startLine) * 8);
-      display.println(line);
+    if (line.length() > 0) {
+      display.setCursor(0, y);
+      display.print(line);
     }
-    lineNum++;
+    
+    // Если остановились на \n — перешагиваем его
+    if (pos < browserResult.length() && browserResult[pos] == '\n') {
+      pos++;
+    }
+    
+    screenLine++;
   }
-  
+
   display.display();
 }
 
@@ -480,45 +507,86 @@ String stripHTML(String html) {
   String result = "";
   bool inTag = false;
   bool inScript = false;
-  
+
   for (int i = 0; i < html.length(); i++) {
     char c = html[i];
-    
+
     if (c == '<') {
-      if (html.substring(i, i + 7) == "<script" || html.substring(i, i + 6) == "<style") inScript = true;
+      // Проверяем, не начинается ли script или style
+      if (html.substring(i, i + 7) == "<script" || html.substring(i, i + 6) == "<style") {
+        inScript = true;
+      }
       inTag = true;
     }
     else if (c == '>') {
-      if (inScript && (html.substring(i - 7, i + 1) == "</script" || html.substring(i - 6, i + 1) == "</style")) inScript = false;
+      if (inScript) {
+        // Проверяем закрытие script/style
+        if (html.substring(i - 7, i + 1) == "</script" || html.substring(i - 6, i + 1) == "</style") {
+          inScript = false;
+        }
+      } else {
+        // Некоторые теги заменяем на пробел, чтобы слова не слипались
+        result += ' ';
+      }
       inTag = false;
     }
     else if (!inTag && !inScript) {
+      // Обрабатываем HTML entities (упрощённо)
       if (c == '&') {
-        if (html.substring(i, i + 5) == "&amp;") { result += '&'; i += 4; }
-        else if (html.substring(i, i + 4) == "&lt;") { result += '<'; i += 3; }
-        else if (html.substring(i, i + 4) == "&gt;") { result += '>'; i += 3; }
+        if (html.substring(i, i + 5) == "&amp;")  { result += '&'; i += 4; }
+        else if (html.substring(i, i + 4) == "&lt;")   { result += '<'; i += 3; }
+        else if (html.substring(i, i + 4) == "&gt;")   { result += '>'; i += 3; }
         else if (html.substring(i, i + 6) == "&nbsp;") { result += ' '; i += 5; }
         else if (html.substring(i, i + 6) == "&quot;") { result += '"'; i += 5; }
-        else result += c;
-      } else result += c;
+        else { result += c; }
+      }
+      // Игнорируем возвраты каретки (\r)
+      else if (c == '\r') {
+        // ничего не делаем
+      }
+      // Оставляем явные переносы строк (\n)
+      else if (c == '\n') {
+        result += '\n';
+      }
+      else {
+        result += c;
+      }
     }
   }
-  
+
+  // Убираем множественные пробелы и пустые строки
   String clean = "";
+  bool lastWasNewline = false;
   bool lastWasSpace = false;
+
   for (int i = 0; i < result.length(); i++) {
     char c = result[i];
-    if (c == '\n' || c == '\r') {
-      if (!lastWasSpace) { clean += '\n'; lastWasSpace = true; }
+    if (c == '\n') {
+      if (!lastWasNewline) {
+        clean += '\n';
+        lastWasNewline = true;
+        lastWasSpace = false;
+      }
     } else if (c == ' ' || c == '\t') {
-      if (!lastWasSpace) { clean += ' '; lastWasSpace = true; }
+      if (!lastWasSpace && !lastWasNewline) {
+        clean += ' ';
+        lastWasSpace = true;
+      }
     } else {
       clean += c;
+      lastWasNewline = false;
       lastWasSpace = false;
     }
   }
-  
-  return clean;
+
+  // Убираем "висящие" пробелы в начале строк
+  String finalResult = "";
+  for (int i = 0; i < clean.length(); i++) {
+    if (clean[i] == ' ' && (i == 0 || clean[i-1] == '\n')) continue;
+    finalResult += clean[i];
+  }
+
+  return finalResult;
 }
 
 String urlEncode(String str) {
